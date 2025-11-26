@@ -1,0 +1,516 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Risky Falling Coins — Levels 1-4</title>
+  <style>
+    :root { --game-width: 400px; --game-height: 600px; }
+
+    html,body {
+      height: 100%;
+      margin: 0;
+      background: #222;
+      font-family: Arial, Helvetica, sans-serif;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    #gameArea {
+      position: relative;
+      width: var(--game-width);
+      height: var(--game-height);
+      background: linear-gradient(180deg,#4b4b4b,#3a3a3a);
+      border-radius: 10px;
+      border: 4px solid #333;
+      overflow: hidden;
+      box-shadow: 0 10px 40px rgba(0,0,0,0.6);
+    }
+
+    /* Single balance label and best score */
+    #scoreboard {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      background: #fff;
+      color: #000;
+      padding: 8px 14px;
+      border-radius: 10px;
+      font-weight: 800;
+      box-shadow: 0 6px 18px rgba(0,0,0,0.35);
+      z-index: 80;
+      min-width: 220px;
+      text-align: left;
+    }
+    #bestLabel {
+      margin-top: 6px;
+      font-size: 12px;
+      font-weight: 700;
+      color: #333;
+    }
+
+    /* Center warning and death overlay */
+    #warning {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%,-50%);
+      background: rgba(200,20,20,0.95);
+      color: #fff;
+      padding: 18px 22px;
+      border-radius: 10px;
+      font-size: 18px;
+      font-weight: 700;
+      text-align: center;
+      display: none;
+      z-index: 200;
+      white-space: pre-line;
+    }
+    #warning button {
+      margin-top: 12px;
+      padding: 8px 14px;
+      border-radius: 6px;
+      border: none;
+      background: #fff;
+      color: #c00;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    /* Player slightly higher with smooth image transition */
+    #player {
+      position: absolute;
+      bottom: 80px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 50px;
+      height: 50px;
+      background-image: url('https://www.pngkey.com/png/detail/327-3272410_jews-laughing-meme-png-jews-laughing-meme-evil.png'); /* default image (replace if needed) */
+      background-size: cover;
+      background-position: center;
+      z-index: 60;
+      pointer-events: none;
+      transition: background-image 200ms ease;
+    }
+
+    .coin {
+      position: absolute;
+      width: 30px;
+      height: 30px;
+      background: radial-gradient(circle at 30% 30%, #fff7b2, gold 40%, #c79a00 100%);
+      border-radius: 50%;
+      box-shadow: 0 0 10px rgba(255,215,0,0.8);
+      z-index: 30;
+    }
+
+    .enemy {
+      position: absolute;
+      width: 60px;
+      height: 60px;
+      background-image: url('https://c0.uidownload.com/pngpics/1125/180/adolf-hitler-silhouette-nazi-party-leader-illustration-monochrome-political-figure-black-and-white-historical-stencil-military-uniform-profile-world-war-ii-era-art-german-dictator.png');
+      background-size: cover;
+      background-position: center;
+      border-radius: 8px;
+      z-index: 40;
+    }
+
+    /* Big enemy as static image */
+    .bigEnemyImg {
+      position: absolute;
+      width: 140px;
+      height: 140px;
+      background-image: url('https://media1.tenor.com/m/ex-J35EhIBcAAAAd/alex-jones-jew-alexjonesjew.gif');
+      background-size: cover;
+      background-position: center;
+      border-radius: 12px;
+      z-index: 70;
+      pointer-events: none;
+    }
+
+    .multiplierCoin {
+      position: absolute;
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      background: linear-gradient(135deg,#8a2be2,#ff69b4);
+      box-shadow: 0 0 18px rgba(200,0,200,0.9);
+      border: 2px solid #fff;
+      z-index: 50;
+    }
+
+    .x5Coin {
+      position: absolute;
+      width: 48px;
+      height: 48px;
+      border-radius: 50%;
+      background: radial-gradient(circle at 30% 30%, #fff9d6, #ffd700 40%, #b88600 100%);
+      box-shadow: 0 0 24px rgba(255,215,0,0.95);
+      border: 2px solid #fff;
+      z-index: 75;
+    }
+
+    .hidden { display: none !important; }
+  </style>
+</head>
+<body>
+  <div id="gameArea" aria-label="Game area">
+    <div id="scoreboard">
+      💰 Total: <span id="totalDisplay">$0.00</span>
+      <div id="bestLabel">Best: $0.00</div>
+    </div>
+    <div id="warning" role="dialog" aria-hidden="true"></div>
+    <div id="player" aria-hidden="true"></div>
+  </div>
+
+  <script>
+    /************************************************************************
+     * Single-balance version with Levels 1-4
+     *
+     * - Level thresholds:
+     *     > $50  => Level 1: "Level up: Drew Mak" (image URL provided)
+     *     > $100 => Level 2: "Level Up: Super Drew Mak" (image URL provided)
+     *     > $170 => Level 3: (image URL provided)
+     *     > $350 => Level 4: (image URL provided)
+     * - If total falls below a threshold, the player reverts to the previous level image
+     * - Multiplier coin spawns more often and enemies scale with speed
+     * - Slower, smoother fall speed scaling
+     * - Best score persisted and shown
+     ************************************************************************/
+
+    // Level image URLs (as provided)
+    const IMG_DEFAULT = 'https://www.pngkey.com/png/detail/327-3272410_jews-laughing-meme-png-jews-laughing-meme-evil.png'; // keep a local default or replace with a URL if you want
+    const IMG_LEVEL1 = 'https://cdn.discordapp.com/attachments/1424234011676381309/1443123842158428220/IMG_6157.png?ex=6927ed4f&is=69269bcf&hm=8db604c852288330b6b72276592edf7fa848f92a4cd70d2abbb466b405bfabf4';
+    const IMG_LEVEL2 = 'https://cdn.discordapp.com/attachments/1424234011676381309/1443088006100684911/IMG_6412.webp?ex=6927cbef&is=69267a6f&hm=84ffbce431a7aef3416e104b66f52b2bc20fb79ebbd737b79d0510cba976a7ca';
+    const IMG_LEVEL3 = 'https://cdn.discordapp.com/attachments/1424234011676381309/1443130578495864891/IMG_6395.png?ex=6927f395&is=6926a215&hm=a31ef2867742f080a83e27ac48091cc6d94dd38a2ca0b2145461a00d101d526a';
+    const IMG_LEVEL4 = 'https://cdn.discordapp.com/attachments/1424234011676381309/1443131014703611944/IMG_5918.png?ex=6927f3fd&is=6926a27d&hm=f2c90b593b72438085ccd4ff9309fa8e4b67177bf2089ea8efe0e9057d2dc9a4';
+
+    // Level thresholds
+    const LEVEL1_THRESHOLD = 50;
+    const LEVEL2_THRESHOLD = 100;
+    const LEVEL3_THRESHOLD = 170;
+    const LEVEL4_THRESHOLD = 350;
+
+    // Local storage key for best score
+    const BEST_KEY = 'risky_game_best';
+
+    // Game state
+    let total = 0;           // single total balance for the run
+    let gameOver = false;
+    let currentLevel = 0;    // 0 = default, 1..4 levels
+    let best = parseFloat(localStorage.getItem(BEST_KEY)) || 0;
+
+    // DOM
+    const gameArea = document.getElementById('gameArea');
+    const totalDisplay = document.getElementById('totalDisplay');
+    const bestLabel = document.getElementById('bestLabel');
+    const warning = document.getElementById('warning');
+    const playerEl = document.getElementById('player');
+
+    // Movement
+    let playerX = (gameArea.offsetWidth - 50) / 2;
+    let targetX = playerX;
+    let useMouseControl = false;
+    let warningTimeout = null;
+    let levelTimeout = null;
+
+    // Effective value used for scaling capped at 120
+    function effectiveForScaling() {
+      return Math.min(total, 120);
+    }
+
+    // Update UI and best score
+    function updateUI() {
+      totalDisplay.textContent = `$${total.toFixed(2)}`;
+      // update best if beaten
+      if (total > best) {
+        best = parseFloat(total.toFixed(2));
+        localStorage.setItem(BEST_KEY, best.toFixed(2));
+      }
+      bestLabel.textContent = `Best: $${best.toFixed(2)}`;
+      checkLevelChange();
+    }
+
+    // Show overlay messages
+    function showWarning(message, withButton = false, persistent = false) {
+      if (warningTimeout) { clearTimeout(warningTimeout); warningTimeout = null; }
+      warning.innerHTML = message + (withButton ? `<br><button id="warningRestartBtn">Restart</button>` : '');
+      warning.style.display = 'block';
+      warning.setAttribute('aria-hidden', 'false');
+
+      if (withButton) {
+        setTimeout(() => {
+          const btn = document.getElementById('warningRestartBtn');
+          if (btn) btn.addEventListener('click', restartGame);
+        }, 0);
+      }
+
+      if (!withButton && !persistent && !gameOver) {
+        warningTimeout = setTimeout(() => {
+          warning.style.display = 'none';
+          warning.setAttribute('aria-hidden', 'true');
+          warningTimeout = null;
+        }, 1500);
+      }
+    }
+
+    // Level up text display
+    function showLevelUpText(text) {
+      if (levelTimeout) { clearTimeout(levelTimeout); levelTimeout = null; }
+      warning.innerHTML = text;
+      warning.style.display = 'block';
+      warning.setAttribute('aria-hidden', 'false');
+      levelTimeout = setTimeout(() => {
+        if (!gameOver) {
+          warning.style.display = 'none';
+          warning.setAttribute('aria-hidden', 'true');
+        }
+        levelTimeout = null;
+      }, 1600);
+    }
+
+    // Change player image according to level
+    function setPlayerImageForLevel(level) {
+      if (level === 4) playerEl.style.backgroundImage = `url('${IMG_LEVEL4}')`;
+      else if (level === 3) playerEl.style.backgroundImage = `url('${IMG_LEVEL3}')`;
+      else if (level === 2) playerEl.style.backgroundImage = `url('${IMG_LEVEL2}')`;
+      else if (level === 1) playerEl.style.backgroundImage = `url('${IMG_LEVEL1}')`;
+      else playerEl.style.backgroundImage = `url('${IMG_DEFAULT}')`;
+    }
+
+    // Evaluate level transitions and update image + show text when leveling up
+    function checkLevelChange() {
+      const prevLevel = currentLevel;
+      if (total > LEVEL4_THRESHOLD) currentLevel = 4;
+      else if (total > LEVEL3_THRESHOLD) currentLevel = 3;
+      else if (total > LEVEL2_THRESHOLD) currentLevel = 2;
+      else if (total > LEVEL1_THRESHOLD) currentLevel = 1;
+      else currentLevel = 0;
+
+      if (currentLevel > prevLevel) {
+        // show appropriate level-up text for upward transitions
+        if (currentLevel === 1) showLevelUpText('Level up: Drew Mak');
+        else if (currentLevel === 2) showLevelUpText('Level Up: Super Drew Mak');
+        else if (currentLevel === 3) showLevelUpText('Level Up: Ultra Drew Mak');
+        else if (currentLevel === 4) showLevelUpText('Level Up: Legendary Drew Mak');
+      }
+
+      // If level decreased, simply revert image (no overlay)
+      setPlayerImageForLevel(currentLevel);
+    }
+
+    function restartGame() {
+      location.reload();
+    }
+
+    // Smooth player movement
+    function updatePlayerPosition() {
+      if (gameOver) return;
+      playerX += (targetX - playerX) * 0.18;
+      playerX = Math.max(0, Math.min(gameArea.offsetWidth - 50, playerX));
+      playerEl.style.left = playerX + 'px';
+      requestAnimationFrame(updatePlayerPosition);
+    }
+    updatePlayerPosition();
+
+    // Controls
+    document.addEventListener('keydown', (ev) => {
+      if (gameOver) return;
+      const key = ev.key.toLowerCase();
+      if (key === 'm') {
+        useMouseControl = !useMouseControl;
+        showWarning(useMouseControl ? '🖱 Mouse control enabled' : '⌨️ Keyboard control enabled');
+        return;
+      }
+      if (!useMouseControl) {
+        if (key === 'a') targetX -= 36;
+        if (key === 'd') targetX += 36;
+        targetX = Math.max(0, Math.min(gameArea.offsetWidth - 50, targetX));
+      }
+    });
+
+    document.addEventListener('mousemove', (ev) => {
+      if (gameOver || !useMouseControl) return;
+      const rect = gameArea.getBoundingClientRect();
+      const mouseX = ev.clientX - rect.left;
+      targetX = Math.max(0, Math.min(gameArea.offsetWidth - 50, mouseX - 25));
+    });
+
+    // Spawn scaling adjustments
+    // Gentler spawn acceleration and less noticeable speed scaling
+    function getSpawnIntervalMs() {
+      const base = 700;
+      const effective = effectiveForScaling();
+      // gentler reduction: divide by 800 and cap at 50% reduction
+      const reduction = Math.min(effective / 800, 0.5);
+      return Math.max(160, base * (1 - reduction));
+    }
+
+    // Enemy chance increases more noticeably with speed (effective)
+    function getEnemyChance() {
+      // stronger scaling: base 0.35 + effective/200, capped
+      let chance = 0.35 + (effectiveForScaling() / 200);
+      if (chance > 0.95) chance = 0.95;
+      return chance;
+    }
+
+    // Multiplier coin spawn chance (more often and scales with speed)
+    function getMultiplierChance() {
+      // base 12% and increases with effective; cap at 50%
+      const chance = Math.min(0.12 + (effectiveForScaling() / 240), 0.5);
+      return chance;
+    }
+
+    // Spawn loop
+    function spawnLoop() {
+      if (gameOver) return;
+      spawnObject();
+      setTimeout(spawnLoop, getSpawnIntervalMs());
+    }
+
+    function decideSpawnX(isEnemy, width = 60) {
+      if (isEnemy && Math.random() < 0.4) {
+        const jitter = (Math.random() * 60) - 30;
+        return Math.max(0, Math.min(gameArea.offsetWidth - width, playerX + jitter));
+      }
+      return Math.random() * (gameArea.offsetWidth - width);
+    }
+
+    // Spawning objects
+    function spawnObject() {
+      if (gameOver) return;
+
+      // Chance to spawn big enemy (rare)
+      const bigEnemyChance = 0.03 + Math.min(effectiveForScaling() / 5000, 0.07);
+      if (Math.random() < bigEnemyChance) {
+        const spawnX = decideSpawnX(true, 140);
+
+        const big = document.createElement('div');
+        big.className = 'bigEnemyImg';
+        big.style.left = spawnX + 'px';
+        big.style.top = '-160px';
+        gameArea.appendChild(big);
+
+        const x5 = document.createElement('div');
+        x5.className = 'x5Coin';
+        const x5Left = spawnX + (140 - 48) / 2;
+        x5.style.left = x5Left + 'px';
+        x5.style.top = '-220px';
+        gameArea.appendChild(x5);
+
+        startFall(x5, 'x5');
+        startFall(big, 'bigEnemy');
+        return;
+      }
+
+      // Normal spawn path
+      const enemyChance = getEnemyChance();
+      const isEnemy = Math.random() < enemyChance;
+      const spawnX = decideSpawnX(isEnemy, isEnemy ? 60 : 30);
+
+      const el = document.createElement('div');
+      el.style.left = spawnX + 'px';
+      el.style.top = '0px';
+
+      if (isEnemy) el.className = 'enemy';
+      else el.className = 'coin';
+
+      gameArea.appendChild(el);
+
+      // Multiplier coin now spawns more often and scales with speed
+      if (isEnemy && Math.random() < getMultiplierChance()) {
+        const m = document.createElement('div');
+        m.className = 'multiplierCoin';
+        m.style.left = (spawnX + 8) + 'px';
+        m.style.top = '-48px';
+        gameArea.appendChild(m);
+        startFall(m, 'multiplier');
+      }
+
+      startFall(el, isEnemy ? 'enemy' : 'coin');
+    }
+
+    // Falling and collision logic with gentler speed scaling
+    function startFall(el, type = '') {
+      const tickMs = 30;
+      const interval = setInterval(() => {
+        if (gameOver) {
+          if (el.parentElement) el.remove();
+          clearInterval(interval);
+          return;
+        }
+
+        const currentTop = parseFloat(el.style.top) || 0;
+        // gentler speed: base 3 and divide effective by 12 so changes are subtle
+        const effective = effectiveForScaling();
+        const speed = (3 + effective / 12);
+        el.style.top = (currentTop + speed) + 'px';
+
+        const elRect = el.getBoundingClientRect();
+        const playerRect = playerEl.getBoundingClientRect();
+
+        const collided =
+          elRect.bottom >= playerRect.top &&
+          elRect.top <= playerRect.bottom &&
+          elRect.left <= playerRect.right &&
+          elRect.right >= playerRect.left;
+
+        if (collided) {
+          if (type === 'coin') {
+            const value = parseFloat((Math.random() * 0.9 + 0.1).toFixed(2));
+            total = parseFloat((total + value).toFixed(2));
+            updateUI();
+          } else if (type === 'multiplier') {
+            // multiplier multiplies the live total by 1.1 - 1.5
+            const multiplier = parseFloat((Math.random() * 0.4 + 1.1).toFixed(2));
+            total = parseFloat((total * multiplier).toFixed(2));
+            showWarning(`✨ Multiplied by x${multiplier.toFixed(2)}`);
+            updateUI();
+          } else if (type === 'enemy') {
+            if (total < 4) {
+              const collectedAtDeath = total;
+              // show death overlay with collected and best
+              showWarning(`⚠️ You Hit Lar\nCollected: $${collectedAtDeath.toFixed(2)}\nBest: $${best.toFixed(2)}`, true, true);
+              gameOver = true;
+            } else {
+              total = parseFloat((total * 0.7).toFixed(2));
+              showWarning('❌ Enemy hit! Total reduced to 70%');
+              updateUI();
+            }
+          } else if (type === 'bigEnemy') {
+            const collectedAtDeath = total;
+            total = 0;
+            updateUI();
+            showWarning(`⚠️ You Hit Lar\nCollected: $${collectedAtDeath.toFixed(2)}\nBest: $${best.toFixed(2)}`, true, true);
+            gameOver = true;
+          } else if (type === 'x5') {
+            total = parseFloat((total * 5).toFixed(2));
+            showWarning('💥 x5 Collected!');
+            updateUI();
+          }
+
+          if (el.parentElement) el.remove();
+          clearInterval(interval);
+          return;
+        }
+
+        // remove if off-screen
+        if (currentTop > gameArea.offsetHeight + 200) {
+          if (el.parentElement) el.remove();
+          clearInterval(interval);
+          return;
+        }
+      }, tickMs);
+    }
+
+    // Initialize player image and UI
+    setPlayerImageForLevel(0);
+    updateUI();
+    spawnLoop();
+
+    // expose restart for overlay button
+    window.restartGame = restartGame;
+  </script>
+</body>
+</html>
