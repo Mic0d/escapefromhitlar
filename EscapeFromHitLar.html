@@ -1,0 +1,490 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Risky Falling Coins Game — Slowdown Coin</title>
+  <style>
+    :root { --game-width: 400px; --game-height: 600px; }
+
+    html,body {
+      height: 100%;
+      margin: 0;
+      background: #222;
+      font-family: Arial, Helvetica, sans-serif;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    #gameWrapper {
+      position: relative;
+      width: calc(var(--game-width) + 260px);
+      display: flex;
+      gap: 20px;
+      align-items: flex-start;
+    }
+
+    #gameArea {
+      position: relative;
+      width: var(--game-width);
+      height: var(--game-height);
+      background: #444;
+      border-radius: 10px;
+      border: 4px solid #333;
+      overflow: hidden;
+    }
+
+    #scoreboard {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      background: #fff;
+      color: #000;
+      padding: 6px 12px;
+      border-radius: 8px;
+      font-weight: bold;
+      box-shadow: 0 6px 18px rgba(0,0,0,0.4);
+      z-index: 50;
+    }
+
+    #warning {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%,-50%);
+      background: rgba(255,0,0,0.95);
+      color: #fff;
+      padding: 18px 28px;
+      border-radius: 10px;
+      font-size: 18px;
+      font-weight: 700;
+      text-align: center;
+      display: none;
+      z-index: 200;
+    }
+    #warning button {
+      margin-top: 12px;
+      padding: 8px 14px;
+      border-radius: 6px;
+      border: none;
+      background: #fff;
+      color: #c00;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    #player {
+      position: absolute;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 50px;
+      height: 50px;
+      background-image: url('https://www.pngkey.com/png/detail/327-3272410_jews-laughing-meme-png-jews-laughing-meme-evil.png');
+      background-size: cover;
+      background-position: center;
+      z-index: 40;
+      pointer-events: none;
+    }
+
+    .coin {
+      position: absolute;
+      width: 30px;
+      height: 30px;
+      background: radial-gradient(circle at 30% 30%, #fff7b2, gold 40%, #c79a00 100%);
+      border-radius: 50%;
+      box-shadow: 0 0 10px rgba(255,215,0,0.8);
+      z-index: 20;
+    }
+
+    .enemy {
+      position: absolute;
+      width: 60px;
+      height: 60px;
+      background-image: url('https://c0.uidownload.com/pngpics/1125/180/adolf-hitler-silhouette-nazi-party-leader-illustration-monochrome-political-figure-black-and-white-historical-stencil-military-uniform-profile-world-war-ii-era-art-german-dictator.png');
+      background-size: cover;
+      background-position: center;
+      border-radius: 8px;
+      z-index: 25;
+    }
+
+    .bigEnemy {
+      position: absolute;
+      width: 140px;
+      height: 140px;
+      background-image: url('https://c0.uidownload.com/pngpics/1125/180/adolf-hitler-silhouette-nazi-party-leader-illustration-monochrome-political-figure-black-and-white-historical-stencil-military-uniform-profile-world-war-ii-era-art-german-dictator.png');
+      background-size: cover;
+      background-position: center;
+      border-radius: 12px;
+      box-shadow: 0 8px 30px rgba(0,0,0,0.6);
+      z-index: 35;
+    }
+
+    .multiplierCoin {
+      position: absolute;
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      background: linear-gradient(135deg,#8a2be2,#ff69b4);
+      box-shadow: 0 0 18px rgba(200,0,200,0.9);
+      border: 2px solid #fff;
+      z-index: 30;
+    }
+
+    /* Slowdown coin (replaces x50 coin) */
+    .slowCoin {
+      position: absolute;
+      width: 48px;
+      height: 48px;
+      border-radius: 50%;
+      background: radial-gradient(circle, #00f 20%, #0ff 60%, #b2ffff 100%);
+      box-shadow: 0 0 24px rgba(0,200,255,0.95);
+      border: 2px solid #fff;
+      z-index: 45;
+    }
+
+    #sidePanel {
+      width: 240px;
+      background: #fff;
+      color: #000;
+      padding: 14px;
+      border-radius: 10px;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.45);
+      font-weight: 700;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      align-items: stretch;
+      height: fit-content;
+    }
+    #sidePanel .label { font-size: 14px; color: #333; font-weight: 700; }
+    #sidePanel .value { font-size: 20px; color: #000; }
+    #cashoutBtn {
+      margin-top: 6px;
+      padding: 10px;
+      border-radius: 8px;
+      border: none;
+      background: #2b2b2b;
+      color: #fff;
+      font-weight: 800;
+      cursor: pointer;
+    }
+
+    /* Bottom cashed out display: always visible */
+    #bottomCashed {
+      position: absolute;
+      bottom: 10px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: #fff;
+      color: #000;
+      padding: 8px 14px;
+      border-radius: 8px;
+      font-weight: 700;
+      box-shadow: 0 6px 18px rgba(0,0,0,0.35);
+      min-width: 220px;
+      text-align: center;
+      z-index: 60;
+      display: block;
+    }
+  </style>
+</head>
+<body>
+  <div id="gameWrapper">
+    <div id="gameArea" aria-label="Game area">
+      <div id="scoreboard">💰 Total: $0.00</div>
+      <div id="warning" role="dialog" aria-hidden="true"></div>
+      <div id="player"></div>
+      <div id="bottomCashed">🏦 Cashed out: $0.00</div>
+    </div>
+
+    <div id="sidePanel" aria-label="Cashout panel">
+      <div class="label">💵 Live total</div>
+      <div class="value" id="cashoutTotal">$0.00</div>
+      <button id="cashoutBtn">Cash out & Restart</button>
+      <div style="font-size:12px;color:#444;margin-top:8px;">
+        Controls: A / D (keyboard) or press M to toggle mouse control.
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // State
+    let total = 0;
+    let gameOver = false;
+    let cashedOutAmount = 0;
+
+    const gameArea = document.getElementById('gameArea');
+    const playerEl = document.getElementById('player');
+    const scoreboard = document.getElementById('scoreboard');
+    const warning = document.getElementById('warning');
+    const cashoutTotalEl = document.getElementById('cashoutTotal');
+    const cashoutBtn = document.getElementById('cashoutBtn');
+    const bottomCashed = document.getElementById('bottomCashed');
+
+    let playerX = (gameArea.offsetWidth - 50) / 2;
+    let targetX = playerX;
+    let useMouseControl = false;
+    let warningTimeout = null;
+
+    // Global speed modifier (halved by slow coin for 5s)
+    let speedModifier = 1;
+
+    // Persist last cashed out
+    const LAST_CASH_KEY = 'risky_game_last_cashed';
+    const stored = localStorage.getItem(LAST_CASH_KEY);
+    if (stored !== null) {
+      cashedOutAmount = parseFloat(stored) || 0;
+      bottomCashed.textContent = `🏦 Cashed out: $${cashedOutAmount.toFixed(2)}`;
+    }
+
+    // UI helpers
+    function updateTotalsUI() {
+      scoreboard.textContent = `💰 Total: $${total.toFixed(2)}`;
+      cashoutTotalEl.textContent = `$${total.toFixed(2)}`;
+    }
+
+    function showWarning(message, withButton = false, persistent = false) {
+      if (warningTimeout) { clearTimeout(warningTimeout); warningTimeout = null; }
+      warning.innerHTML = message + (withButton ? `<br><button id="warningRestartBtn">Restart</button>` : '');
+      warning.style.display = 'block';
+      warning.setAttribute('aria-hidden', 'false');
+
+      if (withButton) {
+        setTimeout(() => {
+          const btn = document.getElementById('warningRestartBtn');
+          if (btn) btn.addEventListener('click', restartGame);
+        }, 0);
+      }
+
+      if (!withButton && !persistent && !gameOver) {
+        warningTimeout = setTimeout(() => {
+          warning.style.display = 'none';
+          warning.setAttribute('aria-hidden', 'true');
+          warningTimeout = null;
+        }, 1500);
+      }
+    }
+
+    function restartGame() { location.reload(); }
+
+    // Smooth movement
+    function updatePlayerPosition() {
+      if (gameOver) return;
+      playerX += (targetX - playerX) * 0.18;
+      playerX = Math.max(0, Math.min(gameArea.offsetWidth - 50, playerX));
+      playerEl.style.left = playerX + 'px';
+      requestAnimationFrame(updatePlayerPosition);
+    }
+    updatePlayerPosition();
+
+    document.addEventListener('keydown', (ev) => {
+      if (gameOver) return;
+      const key = ev.key.toLowerCase();
+      if (key === 'm') {
+        useMouseControl = !useMouseControl;
+        showWarning(useMouseControl ? '🖱 Mouse control enabled' : '⌨️ Keyboard control enabled');
+        return;
+      }
+      if (!useMouseControl) {
+        if (key === 'a') targetX -= 36;
+        if (key === 'd') targetX += 36;
+        targetX = Math.max(0, Math.min(gameArea.offsetWidth - 50, targetX));
+      }
+    });
+
+    document.addEventListener('mousemove', (ev) => {
+      if (gameOver || !useMouseControl) return;
+      const rect = gameArea.getBoundingClientRect();
+      const mouseX = ev.clientX - rect.left;
+      targetX = Math.max(0, Math.min(gameArea.offsetWidth - 50, mouseX - 25));
+    });
+
+    // Cashout button
+    cashoutBtn.addEventListener('click', () => {
+      if (gameOver) return;
+      cashedOutAmount = total;
+      localStorage.setItem(LAST_CASH_KEY, cashedOutAmount.toFixed(2));
+      bottomCashed.textContent = `🏦 Cashed out: $${cashedOutAmount.toFixed(2)}`;
+      setTimeout(() => restartGame(), 120);
+    });
+
+    // Spawn timing and chances
+    function getSpawnIntervalMs() {
+      const base = 700;
+      const reduction = Math.min(total / 400, 0.7); // up to 70% faster spawns
+      return Math.max(120, base * (1 - reduction));
+    }
+
+    function getEnemyChance() {
+      let chance = 0.4 + (total / 400); // increases with money
+      if (chance > 0.95) chance = 0.95;
+      return chance;
+    }
+
+    function spawnLoop() {
+      if (gameOver) return;
+      spawnObject();
+      setTimeout(spawnLoop, getSpawnIntervalMs());
+    }
+
+    function decideSpawnX(isEnemy, width = 60) {
+      if (isEnemy && Math.random() < 0.4) {
+        const jitter = (Math.random() * 60) - 30;
+        return Math.max(0, Math.min(gameArea.offsetWidth - width, playerX + jitter));
+      }
+      return Math.random() * (gameArea.offsetWidth - width);
+    }
+
+    // Spawn object including big enemy with slow coin in front
+    function spawnObject() {
+      if (gameOver) return;
+
+      // Chance to spawn big instant-kill enemy (slightly increases with money)
+      const bigEnemyChance = 0.03 + Math.min(total / 5000, 0.07); // 3% → ~10%
+      if (Math.random() < bigEnemyChance) {
+        const spawnX = decideSpawnX(true, 140);
+        const big = document.createElement('div');
+        big.className = 'bigEnemy';
+        big.style.left = spawnX + 'px';
+        big.style.top = '-160px';
+        gameArea.appendChild(big);
+
+        // Slowdown coin directly in front of big enemy (replaces x50)
+        const slow = document.createElement('div');
+        slow.className = 'slowCoin';
+        const slowLeft = spawnX + (140 - 48) / 2;
+        slow.style.left = slowLeft + 'px';
+        slow.style.top = '-220px';
+        gameArea.appendChild(slow);
+
+        startFall(slow, 'slowCoin');
+        startFall(big, 'bigEnemy');
+        return;
+      }
+
+      // Normal spawn path
+      const enemyChance = getEnemyChance();
+      const isEnemy = Math.random() < enemyChance;
+      const spawnX = decideSpawnX(isEnemy, isEnemy ? 60 : 30);
+
+      const el = document.createElement('div');
+      el.style.left = spawnX + 'px';
+      el.style.top = '0px';
+
+      if (isEnemy) {
+        el.className = 'enemy';
+      } else {
+        el.className = 'coin';
+      }
+
+      gameArea.appendChild(el);
+
+      // Rare risky multiplier coin in front of a normal enemy
+      if (isEnemy && Math.random() < 0.08) {
+        const m = document.createElement('div');
+        m.className = 'multiplierCoin';
+        m.style.left = (spawnX + 8) + 'px';
+        m.style.top = '-48px';
+        gameArea.appendChild(m);
+        startFall(m, 'multiplier');
+      }
+
+      startFall(el, isEnemy ? 'enemy' : 'coin');
+    }
+
+    // Falling / collision logic
+    function startFall(el, type = '') {
+      const tickMs = 30;
+      const interval = setInterval(() => {
+        if (gameOver) {
+          if (el.parentElement) el.remove();
+          clearInterval(interval);
+          return;
+        }
+
+        const currentTop = parseFloat(el.style.top) || 0;
+        const speed = (5 + total / 6) * speedModifier; // scaled by money and modifier
+        el.style.top = (currentTop + speed) + 'px';
+
+        const elRect = el.getBoundingClientRect();
+        const playerRect = playerEl.getBoundingClientRect();
+
+        const collided =
+          elRect.bottom >= playerRect.top &&
+          elRect.top <= playerRect.bottom &&
+          elRect.left <= playerRect.right &&
+          elRect.right >= playerRect.left;
+
+        if (collided) {
+          if (type === 'coin') {
+            const value = (Math.random() * 0.9 + 0.1);
+            total += parseFloat(value.toFixed(2));
+            updateTotalsUI();
+          } else if (type === 'multiplier') {
+            const multiplier = (Math.random() * 0.4) + 1.1; // 1.1–1.5
+            total = total * multiplier;
+            showWarning(`✨ Multiplied by x${multiplier.toFixed(2)}`);
+            updateTotalsUI();
+          } else if (type === 'enemy') {
+            if (total < 4) {
+              cashedOutAmount = total;
+              localStorage.setItem(LAST_CASH_KEY, cashedOutAmount.toFixed(2));
+              bottomCashed.textContent = `🏦 Cashed out: $${cashedOutAmount.toFixed(2)}`;
+              endGame(false); // You Hit Lar
+            } else {
+              total = total * 0.7;
+              showWarning('❌ Enemy hit! Money reduced to 70%');
+              updateTotalsUI();
+            }
+          } else if (type === 'bigEnemy') {
+            // big enemy removes all money and kills instantly
+            total = 0;
+            cashedOutAmount = 0;
+            localStorage.setItem(LAST_CASH_KEY, cashedOutAmount.toFixed(2));
+            updateTotalsUI();
+            bottomCashed.textContent = `🏦 Cashed out: $${cashedOutAmount.toFixed(2)}`;
+            endGame(false); // You Hit Lar
+          } else if (type === 'slowCoin') {
+            // halve speed for 5 seconds
+            speedModifier = 0.5;
+            showWarning('🐢 Slowdown activated!');
+            setTimeout(() => { speedModifier = 1; }, 5000);
+          }
+
+          if (el.parentElement) el.remove();
+          clearInterval(interval);
+          return;
+        }
+
+        // remove if off-screen
+        if (currentTop > gameArea.offsetHeight + 200) {
+          if (el.parentElement) el.remove();
+          clearInterval(interval);
+          return;
+        }
+      }, tickMs);
+    }
+
+    // End game handling
+    function endGame(cashedOut = false) {
+      gameOver = true;
+      if (warningTimeout) { clearTimeout(warningTimeout); warningTimeout = null; }
+      if (!cashedOut) {
+        showWarning('⚠️ You Hit Lar', true, true);
+      } else {
+        showWarning('✅ Cashed out!', true, true);
+      }
+    }
+
+    // Start
+    updateTotalsUI();
+    spawnLoop();
+
+    // Expose restart for overlay button
+    window.restartGame = restartGame;
+  </script>
+</body>
+</html>
