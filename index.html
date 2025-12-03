@@ -17,13 +17,14 @@
     }
     #menu h1 { font-size: 48px; margin: 18px 0 8px; letter-spacing: 1px; }
     #menu .changelog { font-size: 14px; margin: 8px 0; color: #aaa; }
-    .menuButtons { display: flex; gap: 12px; justify-content: center; margin: 16px 0; }
+    .menuButtons { display: flex; gap: 12px; justify-content: center; margin: 16px 0; flex-wrap: wrap; }
     .menuBtn {
       background: #fff; color: #111; border: none; padding: 12px 18px;
       border-radius: 10px; font-weight: 800; cursor: pointer; min-width: 140px;
       box-shadow: 0 8px 24px rgba(0,0,0,0.45);
     }
     .menuBtn.secondary { background: #f0f0f0; color: #333; }
+    .menuBtn.tertiary { background: #4a9eff; color: #fff; }
     #globalBox {
       margin-top: 14px; background: #1b1b1b; border: 1px solid #2a2a2a; border-radius: 10px;
       padding: 12px 14px; text-align: left;
@@ -53,6 +54,21 @@
       box-shadow: 0 8px 24px rgba(0,0,0,0.35);
     }
     #bestLabel { margin-top: 6px; font-size: 12px; color: #333; font-weight:700; }
+
+    /* breath bar (Guilo mode) */
+    #breathBarContainer {
+      display: none; position: absolute; bottom: 10px; left: 10px;
+      background: #fff; color: #000; padding: 8px 12px; border-radius: 10px;
+      font-weight: 800; z-index: 300; min-width: 200px; box-shadow: 0 8px 24px rgba(0,0,0,0.35);
+    }
+    #breathBar {
+      width: 160px; height: 20px; background: #ddd; border-radius: 6px; margin-top: 6px;
+      overflow: hidden; position: relative;
+    }
+    #breathBarFill {
+      height: 100%; background: linear-gradient(90deg, #00aa00, #00ff00); width: 100%;
+      transition: width 0.1s ease-out;
+    }
 
     /* overlay messages */
     #overlay {
@@ -106,10 +122,11 @@
   <!-- Main Menu -->
   <div id="menu">
     <h1>Big Jar</h1>
-    <p class="changelog">Changelogs: 2025-12-01 @4:47 PM: Fixed Global Leaderboard for IGRY Mode </p>
+    <p class="changelog">Changelogs: 2025-12-02 @9:50 PM: Added New Gamemode </p>
     <div class="menuButtons">
       <button class="menuBtn" id="playOriginal">Play Original</button>
       <button class="menuBtn secondary" id="playEscape">IGRY Mode (No multipliers)</button>
+      <button class="menuBtn tertiary" id="playGuilo">Escape from being gassed</button>
     </div>
 
     <!-- Global highscores (Firestore) -->
@@ -123,6 +140,10 @@
         <div class="label">IGRY Mode</div>
         <div class="value" id="globalEscape">Loading…</div>
       </div>
+      <div class="row">
+        <div class="label">Gas Chambers</div>
+        <div class="value" id="globalGuilo">Loading…</div>
+      </div>
       <div class="hint">Scores are shared across all players.</div>
     </div>
   </div>
@@ -133,6 +154,13 @@
       <div id="scoreboard">
         💰 Total: <div id="totalDisplay" style="display:inline-block;">$0.00</div>
         <div id="bestLabel">Best (local): $0.00</div>
+      </div>
+
+      <div id="breathBarContainer">
+        <div>🫁 Breath</div>
+        <div id="breathBar">
+          <div id="breathBarFill"></div>
+        </div>
       </div>
 
       <div id="overlay" role="dialog" aria-hidden="true"></div>
@@ -193,10 +221,16 @@
 
     const playOriginalBtn = document.getElementById('playOriginal');
     const playEscapeBtn = document.getElementById('playEscape');
+    const playGuiloBtn = document.getElementById('playGuilo');
 
     // Global menu highscores
     const globalOriginalEl = document.getElementById("globalOriginal");
     const globalEscapeEl   = document.getElementById("globalEscape");
+    const globalGuiloEl    = document.getElementById("globalGuilo");
+
+    // Breath bar
+    const breathBarContainer = document.getElementById('breathBarContainer');
+    const breathBarFill = document.getElementById('breathBarFill');
 
     /* ----------------- Assets & thresholds ----------------- */
     const IMG_DEFAULT = 'https://www.pngkey.com/png/detail/327-3272410_jews-laughing-meme-png-jews-laughing-meme-evil.png';
@@ -206,23 +240,30 @@
     const IMG_LEVEL4 = 'https://i.ibb.co/7tb6LFcx/20250910-1057582.jpg';
     const IMG_LEVEL5 = 'https://i.ibb.co/TDj7hWFm/saultys.png';
     const IMG_LEVEL6 = 'https://i.ibb.co/VYkHdCZL/drewmakkirked.png';
+    const IMG_GUILO_ENEMY = 'https://cdn.britannica.com/36/180236-138-43213780/Overview-concentration-camp-Auschwitz-Poland.jpg';
 
     const LEVEL1_THRESHOLD = 500;
     const LEVEL2_THRESHOLD = 1000;
     const LEVEL3_THRESHOLD = 5000;
     const LEVEL4_THRESHOLD = 10000;
-    const LEVEL5_THRESHOLD = 100000;   // new: level 5 requirement 100,000+
-    const LEVEL6_THRESHOLD = 1000000;  // new: level 6 requirement 1,000,000+
+    const LEVEL5_THRESHOLD = 100000;
+    const LEVEL6_THRESHOLD = 1000000;
 
     // Mode-specific local highscores (per device)
     const LOCAL_BEST_PREFIX = 'bigjar_best';
 
     /* ----------------- Game state ----------------- */
     let total = 0;
-    let best = 0;              // local best per mode
+    let best = 0;
     let gameOver = false;
     let currentLevel = 0;
-    let currentMode = 'original'; // 'original' or 'escape'
+    let currentMode = 'original'; // 'original', 'escape', or 'guilo'
+
+    // Guilo-specific state
+    let breath = 100;
+    const MAX_BREATH = 100;
+    const BREATH_DECAY_RATE = 0.3; // per frame
+    const BREATH_RESTORE_PER_COIN = 8; // per coin collected
 
     // timers & intervals tracking for cleanup
     let spawnTimeoutId = null;
@@ -230,51 +271,55 @@
     const activeElements = new Set();
 
     // movement
-    let controlMode = 'desktop'; // 'desktop' or 'mobile'
+    let controlMode = 'desktop';
     let targetX = 0;
     let playerX = 0;
 
     /* ----------------- Firestore global highscores ----------------- */
-    // highscores collection with documents "original" and "escape"
-    // cached global bests for in-run detection (so we can proactively update when player beats them)
-    const cachedGlobalBest = { original: null, escape: null };
-    const pendingGlobalUpdate = { original: false, escape: false };
+    const cachedGlobalBest = { original: null, escape: null, guilo: null };
+    const pendingGlobalUpdate = { original: false, escape: false, guilo: false };
 
     async function loadGlobalHighscores() {
       try {
         const originalSnap = await getDoc(doc(db, "highscores", "original"));
         const escapeSnap   = await getDoc(doc(db, "highscores", "escape"));
+        const guiloSnap    = await getDoc(doc(db, "highscores", "guilo"));
 
         const originalBest = originalSnap.exists() ? Number(originalSnap.data().best) : null;
         const escapeBest   = escapeSnap.exists() ? Number(escapeSnap.data().best)   : null;
+        const guiloBest    = guiloSnap.exists() ? Number(guiloSnap.data().best)   : null;
 
         globalOriginalEl.textContent = originalBest != null ? `$${originalBest.toFixed(2)}` : "No score yet";
         globalEscapeEl.textContent   = escapeBest != null   ? `$${escapeBest.toFixed(2)}`   : "No score yet";
+        globalGuiloEl.textContent    = guiloBest != null    ? `$${guiloBest.toFixed(2)}`    : "No score yet";
 
-        // cache for in-run detection
         cachedGlobalBest.original = originalBest;
         cachedGlobalBest.escape = escapeBest;
+        cachedGlobalBest.guilo = guiloBest;
       } catch (err) {
         console.error("Failed to load global highscores:", err);
         globalOriginalEl.textContent = "Error";
         globalEscapeEl.textContent = "Error";
+        globalGuiloEl.textContent = "Error";
       }
     }
 
-    // returns true if a write actually happened (global highscore updated)
     async function updateGlobalHighscore(mode, score) {
       try {
-        const ref = doc(db, "highscores", mode === "escape" ? "escape" : "original");
+        let docName = 'original';
+        if (mode === 'escape') docName = 'escape';
+        else if (mode === 'guilo') docName = 'guilo';
+
+        const ref = doc(db, "highscores", docName);
         const snap = await getDoc(ref);
         const currentBest = snap.exists() ? Number(snap.data().best) : null;
 
         if (currentBest == null || score > currentBest) {
           await setDoc(ref, { best: Number(score) });
-          // Reflect immediately in the menu
           if (mode === 'original') globalOriginalEl.textContent = `$${Number(score).toFixed(2)}`;
-          else globalEscapeEl.textContent = `$${Number(score).toFixed(2)}`;
-          // update cache
-          cachedGlobalBest[mode === 'escape' ? 'escape' : 'original'] = Number(score);
+          else if (mode === 'escape') globalEscapeEl.textContent = `$${Number(score).toFixed(2)}`;
+          else if (mode === 'guilo') globalGuiloEl.textContent = `$${Number(score).toFixed(2)}`;
+          cachedGlobalBest[mode === 'escape' ? 'escape' : (mode === 'guilo' ? 'guilo' : 'original')] = Number(score);
           return true;
         }
         return false;
@@ -286,7 +331,9 @@
 
     /* ----------------- Local best per mode ----------------- */
     function bestKeyForMode(mode) {
-      return `${LOCAL_BEST_PREFIX}_${mode === 'escape' ? 'escape' : 'original'}`;
+      if (mode === 'escape') return `${LOCAL_BEST_PREFIX}_escape`;
+      if (mode === 'guilo') return `${LOCAL_BEST_PREFIX}_guilo`;
+      return `${LOCAL_BEST_PREFIX}_original`;
     }
     function loadLocalBest(mode) {
       const raw = localStorage.getItem(bestKeyForMode(mode));
@@ -321,12 +368,10 @@
       }
       bestLabel.textContent = `Best (local): $${best.toFixed(2)}`;
       checkLevelChange();
-      // detect if the running total beats the cached global best for the current mode
       try {
-        const key = currentMode === 'escape' ? 'escape' : 'original';
+        const key = currentMode === 'escape' ? 'escape' : (currentMode === 'guilo' ? 'guilo' : 'original');
         const cached = cachedGlobalBest[key];
         if (!pendingGlobalUpdate[key] && (cached === null || total > cached)) {
-          // mark pending to avoid duplicate writes
           pendingGlobalUpdate[key] = true;
           updateGlobalHighscore(currentMode, total)
             .then((didWrite) => {
@@ -338,6 +383,11 @@
       } catch (e) {
         console.warn('Error checking in-run global beat:', e);
       }
+    }
+
+    function updateBreathUI() {
+      const percent = Math.max(0, Math.min(100, breath)) / 100;
+      breathBarFill.style.width = (percent * 100) + '%';
     }
 
     function showOverlay(text, withButton = false, persistent = false) {
@@ -434,9 +484,11 @@
       if (currentMode === 'escape') {
         const reduction = Math.min(effective / 600, 0.6);
         return Math.max(120, base * (1 - reduction));
+      } else if (currentMode === 'guilo') {
+        const reduction = Math.min(effective / 600, 0.5);
+        return Math.max(150, base * (1 - reduction));
       } else {
         const reduction = Math.min(effective / 800, 0.5);
-        // spawn a bit less often in original mode (higher minimum)
         return Math.max(180, base * (1 - reduction));
       }
     }
@@ -446,6 +498,10 @@
         let chance = 0.18 + (effectiveForScaling() / 180);
         if (chance > 0.9) chance = 0.9;
         return chance;
+      } else if (currentMode === 'guilo') {
+        let chance = 0.25 + (effectiveForScaling() / 250);
+        if (chance > 0.85) chance = 0.85;
+        return chance;
       } else {
         let chance = 0.35 + (effectiveForScaling() / 200);
         if (chance > 0.95) chance = 0.95;
@@ -454,7 +510,7 @@
     }
 
     function getMultiplierChance() {
-      if (currentMode === 'escape') return 0;
+      if (currentMode === 'escape' || currentMode === 'guilo') return 0;
       return Math.min(0.12 + (effectiveForScaling() / 240), 0.5);
     }
 
@@ -482,7 +538,7 @@
       if (gameOver) return;
 
       const bigEnemyChance = 0.03 + Math.min(effectiveForScaling() / 5000, 0.07);
-      if (Math.random() < bigEnemyChance) {
+      if (Math.random() < bigEnemyChance && currentMode !== 'guilo') {
         const spawnX = decideSpawnX(true, 140);
         const big = document.createElement('div');
         big.className = 'bigEnemy';
@@ -529,6 +585,42 @@
           activeElements.add(el);
           startFall(el, 'enemy');
         }
+      } else if (currentMode === 'guilo') {
+        const spawnX = decideSpawnX(isEnemy, isEnemy ? 60 : 30);
+        const el = document.createElement('div');
+        el.style.left = spawnX + 'px';
+        el.style.top = '0px';
+        el.className = isEnemy ? 'enemy' : 'coin';
+        if (isEnemy) {
+          el.style.backgroundImage = `url('${IMG_GUILO_ENEMY}')`;
+          el.style.backgroundSize = 'cover';
+          el.style.backgroundPosition = 'center';
+        }
+        gameArea.appendChild(el);
+        activeElements.add(el);
+
+        // spawn extra coins in Guilo mode
+        if (!isEnemy) {
+          const extraCount = 1 + Math.floor(Math.random() * 2);
+          const spread = 180;
+          for (let i = 0; i < extraCount; i++) {
+            const c = document.createElement('div');
+            c.className = 'coin';
+            const offset = (Math.random() * (spread * 2)) - spread;
+            const left = Math.max(0, Math.min(gameArea.offsetWidth - 30, spawnX + offset));
+            c.style.left = left + 'px';
+            c.style.top = (-30 - Math.random() * 200) + 'px';
+            const scale = 0.85 + Math.random() * 0.5;
+            c.style.width = `${30 * scale}px`;
+            c.style.height = `${30 * scale}px`;
+            c.style.borderRadius = `${50 * scale}%`;
+            gameArea.appendChild(c);
+            activeElements.add(c);
+            startFall(c, 'coin');
+          }
+        }
+
+        startFall(el, isEnemy ? 'enemy' : 'coin');
       } else {
         const spawnX = decideSpawnX(isEnemy, isEnemy ? 60 : 30);
         const el = document.createElement('div');
@@ -538,7 +630,6 @@
         gameArea.appendChild(el);
         activeElements.add(el);
 
-        // If this spawned an enemy, keep existing multiplier possibility
         if (isEnemy && Math.random() < getMultiplierChance()) {
           const m = document.createElement('div');
           m.className = 'multiplierCoin';
@@ -549,20 +640,16 @@
           startFall(m, 'multiplier');
         }
 
-        // MORE: In original mode, spawn more extra coins and spread them out
         if (!isEnemy) {
-          // spawn fewer extras but spread them out more
-          const extraCount = 1 + Math.floor(Math.random() * 3); // 1..3 extra coins
-          const spread = 200; // wider horizontal spread radius in px
+          const extraCount = 1 + Math.floor(Math.random() * 3);
+          const spread = 200;
           for (let i = 0; i < extraCount; i++) {
             const c = document.createElement('div');
             c.className = 'coin';
-            const offset = (Math.random() * (spread * 2)) - spread; // -spread..+spread
+            const offset = (Math.random() * (spread * 2)) - spread;
             const left = Math.max(0, Math.min(gameArea.offsetWidth - 30, spawnX + offset));
             c.style.left = left + 'px';
-            // start higher / more varied vertically for greater scatter
             c.style.top = (-30 - Math.random() * 240) + 'px';
-            // slight size variation for visual variety
             const scale = 0.85 + Math.random() * 0.5;
             c.style.width = `${30 * scale}px`;
             c.style.height = `${30 * scale}px`;
@@ -571,7 +658,6 @@
             activeElements.add(c);
             startFall(c, 'coin');
           }
-          // less frequent clusters
           if (Math.random() < 0.12) {
             const clusterCount = 2 + Math.floor(Math.random() * 3);
             for (let k = 0; k < clusterCount; k++) createScatteredCoin(-60 - Math.random() * 220);
@@ -601,7 +687,14 @@
 
         const currentTop = parseFloat(el.style.top) || 0;
         const effective = effectiveForScaling();
-        const speed = (currentMode === 'escape') ? (3.5 + effective / 10) : (3 + effective / 12);
+        let speed = (currentMode === 'escape') ? (3.5 + effective / 10) : (3 + effective / 12);
+        
+        // Guilo: speed increases with money up to $200
+        if (currentMode === 'guilo') {
+          const moneySpeedBoost = Math.min(total, 200) * 0.02;
+          speed += moneySpeedBoost;
+        }
+        
         el.style.top = (currentTop + speed) + 'px';
 
         const elRect = el.getBoundingClientRect();
@@ -617,19 +710,27 @@
           if (type === 'coin') {
             const value = parseFloat((Math.random() * 0.9 + 0.1).toFixed(2));
             total = parseFloat((total + value).toFixed(2));
+            if (currentMode === 'guilo') {
+              breath = Math.min(MAX_BREATH, breath + BREATH_RESTORE_PER_COIN);
+            }
             updateUI();
+            updateBreathUI();
           } else if (type === 'multiplier') {
             const multiplier = parseFloat((Math.random() * 0.4 + 1.1).toFixed(2));
             total = parseFloat((total * multiplier).toFixed(2));
             showOverlay(`✨ Multiplied by x${multiplier.toFixed(2)}`);
             updateUI();
           } else if (type === 'enemy') {
-            if (total < 4) {
+            if (currentMode === 'guilo') {
+              showOverlay(`You Got Gassed 💀\nCollected: $${total.toFixed(2)}\nBest (local): $${best.toFixed(2)}`, true, true);
+              gameOver = true;
+              stopSpawnAndIntervals();
+              try { await updateGlobalHighscore(currentMode, total); } catch (e) { console.warn('Global update on death failed', e); }
+            } else if (total < 4) {
               const collectedAtDeath = total;
               showOverlay(`⚠️ You Hit Lar\nCollected: $${collectedAtDeath.toFixed(2)}\nBest (local): $${best.toFixed(2)}`, true, true);
               gameOver = true;
               stopSpawnAndIntervals();
-              // Update global highscore (await so the write is attempted)
               try { await updateGlobalHighscore(currentMode, collectedAtDeath); } catch (e) { console.warn('Global update on death (enemy) failed', e); }
             } else {
               total = parseFloat((total * 0.7).toFixed(2));
@@ -699,25 +800,33 @@
     function resetGameState() {
       stopSpawnAndIntervals();
       total = 0;
+      breath = MAX_BREATH;
       currentLevel = 0;
       gameOver = false;
-      best = loadLocalBest(currentMode); // load mode-specific local best
+      best = loadLocalBest(currentMode);
       updateUI();
+      updateBreathUI();
       setPlayerImageForLevel(0);
       initPlayerPosition();
       overlay.style.display = 'none';
-      // clear pending flag for this mode on reset
-      const mk = currentMode === 'escape' ? 'escape' : 'original';
+      const mk = currentMode === 'escape' ? 'escape' : (currentMode === 'guilo' ? 'guilo' : 'original');
       pendingGlobalUpdate[mk] = false;
     }
 
     function startGame(mode) {
-      currentMode = mode === 'escape' ? 'escape' : 'original';
+      currentMode = mode === 'escape' ? 'escape' : (mode === 'guilo' ? 'guilo' : 'original');
       menuEl.style.display = 'none';
       gameWrapper.style.display = 'block';
       gameWrapper.setAttribute('aria-hidden', 'false');
 
       resetGameState();
+
+      // Show/hide breath bar
+      if (currentMode === 'guilo') {
+        breathBarContainer.style.display = 'block';
+      } else {
+        breathBarContainer.style.display = 'none';
+      }
 
       controlMode = modeSelect.value || 'desktop';
       if (controlMode === 'mobile') {
@@ -730,22 +839,43 @@
 
       document.addEventListener('mousemove', onMouseMove);
       requestAnimationFrame(updatePlayerLoop);
+
+      // Start Guilo breath decay loop
+      if (currentMode === 'guilo') {
+        const breathDecayInterval = setInterval(() => {
+          if (gameOver) {
+            clearInterval(breathDecayInterval);
+          } else {
+            breath -= BREATH_DECAY_RATE;
+            if (breath <= 0) {
+              breath = 0;
+              showOverlay(`⚠️ Out of Breath!\nCollected: $${total.toFixed(2)}\nBest (local): $${best.toFixed(2)}`, true, true);
+              gameOver = true;
+              stopSpawnAndIntervals();
+              updateGlobalHighscore(currentMode, total).catch(e => console.warn('Global update on breath depletion failed', e));
+              clearInterval(breathDecayInterval);
+            }
+            updateBreathUI();
+          }
+        }, 30);
+        activeIntervals.add(breathDecayInterval);
+      }
+
       spawnLoop();
     }
 
     /* ----------------- UI bindings ----------------- */
     playOriginalBtn.addEventListener('click', () => startGame('original'));
     playEscapeBtn.addEventListener('click', () => startGame('escape'));
+    playGuiloBtn.addEventListener('click', () => startGame('guilo'));
 
     backToMenuBtn.addEventListener('click', async () => {
       try {
-        // If player has a score from this run, persist it locally and try to update global highscore
         if (total > 0) {
           if (total > best) {
             saveLocalBest(currentMode, total);
             best = total;
           }
-          // best-effort but awaited so menu shows updated global value when we reload highscores
           try { await updateGlobalHighscore(currentMode, total); } catch (e) { console.warn('Global update on back-to-menu failed', e); }
         }
       } catch (err) {
@@ -756,7 +886,6 @@
         gameWrapper.style.display = 'none';
         menuEl.style.display = 'block';
         menuEl.scrollIntoView({behavior:'smooth'});
-        // Refresh global highscores when returning
         loadGlobalHighscores();
       }
     });
@@ -779,12 +908,11 @@
     updateUI();
     requestAnimationFrame(updatePlayerLoop);
 
-    // Load global highscores on menu
     loadGlobalHighscores();
 
-    // Expose (optional)
     window.updateGlobalHighscore = updateGlobalHighscore;
     window.loadGlobalHighscores = loadGlobalHighscores;
   </script>
 </body>
 </html>
+
